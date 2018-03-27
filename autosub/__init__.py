@@ -2,7 +2,7 @@
 from __future__ import absolute_import, print_function, unicode_literals
 import argparse
 import audioop
-from googleapiclient.discovery import build
+from googletrans import Translator as GoogleTranslator
 import json
 import math
 import multiprocessing
@@ -96,27 +96,16 @@ class SpeechRecognizer(object):
 
 
 class Translator(object):
-    def __init__(self, language, api_key, src, dst):
-        self.language = language
-        self.api_key = api_key
-        self.service = build('translate', 'v2',
-                             developerKey=self.api_key)
+    def __init__(self, src, dst):
+        self.googleTranslator = GoogleTranslator()
         self.src = src
         self.dst = dst
 
     def __call__(self, sentence):
         try:
             if not sentence: return
-            result = self.service.translations().list(
-                source=self.src,
-                target=self.dst,
-                q=[sentence]
-            ).execute()
-            if 'translations' in result and len(result['translations']) and \
-                'translatedText' in result['translations'][0]:
-                return result['translations'][0]['translatedText']
-            return ""
-
+            translation = self.googleTranslator.translate(sentence, src=self.src, dest=self.dst)
+            return translation.text
         except KeyboardInterrupt:
             return
 
@@ -302,26 +291,16 @@ def generate_subtitles(
             pbar.finish()
 
             if not is_same_language(src_language, dst_language):
-                if api_key:
-                    google_translate_api_key = api_key
-                    translator = Translator(dst_language, google_translate_api_key,
-                                            dst=dst_language,
-                                            src=src_language)
-                    prompt = "Translating from {0} to {1}: ".format(src_language, dst_language)
-                    widgets = [prompt, Percentage(), ' ', Bar(), ' ', ETA()]
-                    pbar = ProgressBar(widgets=widgets, maxval=len(regions)).start()
-                    translated_transcripts = []
-                    for i, transcript in enumerate(pool.imap(translator, transcripts)):
-                        translated_transcripts.append(transcript)
-                        pbar.update(i)
-                    pbar.finish()
-                    transcripts = translated_transcripts
-                else:
-                    print(
-                        "Error: Subtitle translation requires specified Google Translate API key. "
-                        "See --help for further information."
-                    )
-                    return 1
+                translator = Translator(dst=dst_language, src=src_language)
+                prompt = "Translating from {0} to {1}: ".format(src_language, dst_language)
+                widgets = [prompt, Percentage(), ' ', Bar(), ' ', ETA()]
+                pbar = ProgressBar(widgets=widgets, maxval=len(regions)).start()
+                translated_transcripts = []
+                for i, transcript in enumerate(pool.imap(translator, transcripts)):
+                    translated_transcripts.append(transcript)
+                    pbar.update(i)
+                pbar.finish()
+                transcripts = translated_transcripts
 
         except KeyboardInterrupt:
             pbar.finish()
